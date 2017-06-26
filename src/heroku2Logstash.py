@@ -50,7 +50,7 @@ class MainHandler(tornado.web.RequestHandler):
                     .warning("Error while forwarding msg to logstash: {}".format(error))
                 logging.getLogger("tornado.application").warning("input header:{}".format(self.request.headers))
                 logging.getLogger("tornado.application").warning("input payload:{}".format(log))
-                if e.args[0] == 599:
+                if error.args[0] == 599:
                     stats['timeout'] += 1
                 else:
                     stats['error'] += 1
@@ -72,7 +72,7 @@ def display_stats():
 
 def make_app():
     return tornado.web.Application([
-        (r"/.*", MainHandler),
+        (r"/heroku/.*", MainHandler),
         (r"/api/healthcheck", HealthCheckHandler),
         (r"/api/heartbeat", HealthCheckHandler),
     ])
