@@ -5,7 +5,7 @@ from tornado.httpserver import HTTPServer
 from src.lib import syslogSplitter
 import logging
 from logging.handlers import SysLogHandler, RotatingFileHandler
-
+from http import HTTPStatus
 
 stats = {
     'input': 0,
@@ -73,9 +73,10 @@ class MainHandler(tornado.web.RequestHandler):
         stats['output'] += 1
         destination = self.destination + self.request.uri
         try:
-            print("call to ", destination)
             request = httpclient.HTTPRequest(destination, body=payload, method="POST")
-            yield self.http_client.fetch(request)
+            res = yield self.http_client.fetch(request)
+            if res.code != HTTPStatus.OK:
+                stats['error'] += 1
         except Exception as e:
             self.logger.info("Error while splitting message {} input headers: {}, payload: {}"
                                 .format(e, self.request.headers, payload))
@@ -84,7 +85,6 @@ class MainHandler(tornado.web.RequestHandler):
                 stats['timeout'] += 1
             else:
                 stats['error'] += 1
-            self.set_status(200)
 
 
 
