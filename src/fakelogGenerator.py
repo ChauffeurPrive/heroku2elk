@@ -8,8 +8,10 @@ import time
 import pytz
 
 
-# Generates and send a fake request (aggregating n fake log lines)
 class RequestGenerator:
+    """
+    Generates and send a fake request (aggregating n fake log lines)
+    """
     def __init__(self, url):
         self.url = url
         self.frameCount = 0
@@ -21,6 +23,9 @@ class RequestGenerator:
         }
 
     def send_random_request(self):
+        """
+        send a fake request using a random number of logs in the payload
+        """
         msg_count = random.randrange(1, 10)
         payload = bytes()
         for n in range(msg_count):
@@ -35,12 +40,14 @@ class RequestGenerator:
             return None, payload
 
 
-# Generates a fake log line
 class FakeLog:
+    """
+    Generates a fake log line
+    """
     def __init__(self):
         self.date = datetime.datetime.now().replace(microsecond=0, tzinfo=pytz.utc)
         self.text = get_sentence(True)
-        self.app = 'ponzi'
+        self.app = 'DummyAppName'
         self.dyno = 'web.1'
         self.msg = '<40>1 {} host {} {} - {}\n'.format(self.date.isoformat(), self.app, self.dyno, self.text)
 
@@ -51,8 +58,10 @@ class FakeLog:
         return msg_header + msg
 
 
-# Infinite message generation worker
 class GenWorker:
+    """
+    Infinite message generation worker
+    """
     def __init__(self, url):
         self.shouldStop = False
         self.stats = {'sent': 0, 'timeout': 0}
@@ -64,44 +73,54 @@ class GenWorker:
     def run(self):
         gen = RequestGenerator(self.url)
         while self.shouldStop is False:
+            self.stats['sent'] += 1
             r, msg = gen.send_random_request()
             if not r:
                 self.stats['timeout'] += 1
                 continue
             if r.status_code != 200:
                 print('status_code != 200', r, msg)
-            self.stats['sent'] += 1
-            key = str(r.status_code)
-            if key not in self.stats:
-                self.stats[key] = 1
-            else:
-                self.stats[key] += 1
 
 
-# helper func to start a thread
 def start_thread(obj):
-    print('start thread', obj)
+    """
+    helper func to create and start a thread
+    :param obj: the target object
+    :return: a tuple with the worker, and the created started thread
+    """
     sender = threading.Thread(target=obj.run)
     sender.start()
     return obj, sender
 
 
-# helper func to stop a dedicated thread
 def stop_thread(o):
+    """
+    helper func to stop a dedicated thread
+    :param o: a tuple containing the worker and the thread
+    :return:
+    """
     obj, t = o
-    print('stop thread', obj, t)
     obj.shouldStop = True
     t.join()
 
 
-# generate stats
 def get_stats(worker):
+    """
+    generate statistics on a given worker and return them
+    :param worker: a worker object
+    :return:
+    """
     stats = worker.get_stats()
     return stats['sent'], stats['timeout']
 
 
-# run the fake log generator targeting the given 'url' with 'clientCount' clients
 def run(url, client_count):
+    """
+    run the fake log generator targeting the given 'url' with 'clientCount' clients
+    :param url: the target url
+    :param client_count: number of client to create (nb of threads)
+    :return:
+    """
     workers = [GenWorker(url) for _ in range(client_count)]
     threads = list(map(start_thread, workers))
 
@@ -110,15 +129,12 @@ def run(url, client_count):
         last_timeout = 0
         while True:
             time.sleep(1)
-            zipped = list(zip(*map(get_stats, workers)))
-            sent = sum(zipped[0]) - last_sent
-            timeout = sum(zipped[1]) - last_timeout
-            print('last second stats, sent:', sent, 'timeout:', timeout)
-            last_sent = sum(zipped[0])
-            last_timeout = sum(zipped[1])
+            [total_sent, total_timeout] = [sum(el) for el in zip(*map(get_stats, workers))]
+            print('last second stats, sent:', total_sent - last_sent, 'timeout:', total_timeout - last_timeout)
+            last_sent, last_timeout = total_sent, total_timeout
 
     except KeyboardInterrupt:
         list(map(stop_thread, threads))
 
 if __name__ == '__main__':
-    run('http://127.0.0.1:8080/heroku/v1/toto', 1)
+    run('http://127.0.0.1:8080/heroku/v1/DummyAppName', 1)
