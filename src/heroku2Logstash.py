@@ -5,13 +5,8 @@ from tornado.httpserver import HTTPServer
 from src.lib import syslogSplitter
 import logging
 from logging.handlers import SysLogHandler, RotatingFileHandler
-
-stats = {
-    'input': 0,
-    'output': 0,
-    'timeout': 0,
-    'error': 0
-}
+from statsd import StatsClient
+from src.config import MonitoringConfig
 
 
 class HealthCheckHandler(tornado.web.RequestHandler):
@@ -33,6 +28,10 @@ class MainHandler(tornado.web.RequestHandler):
         self.logger = logging.getLogger("tornado.application")
         self.destination = destination
         self.http_client = httpclient.AsyncHTTPClient()
+        self.statsClient = StatsClient(
+            MonitoringConfig.metrics_host,
+            MonitoringConfig.metrics_port,
+            prefix='heroku2logstash')
 
 
     def set_default_headers(self):
@@ -53,38 +52,39 @@ class MainHandler(tornado.web.RequestHandler):
         :return: HTTPStatus 200
         """
         try:
-            stats['input'] += 1
+            self.statsClient.incr('input', count=1)
             # 1. split
             logs = syslogSplitter.split(self.request.body)
             # 2. forward
             yield [self._forward_request(l) for l in logs]
+            self.set_status(200)
         except Exception as e:
             self.logger.info("Error while splitting message {} input headers: {}, payload: {}"
                                 .format(e, self.request.headers, self.request.body))
-            stats['error'] += 1
-        self.set_status(200)
+            self.statsClient.incr('split.error', count=1)
+            self.set_status(500)
+
 
     @gen.coroutine
     def _forward_request(self, payload):
         """
         Instanciate an AsyncHTTPClient and send a request with the payload in parameters to the destination
         """
-        stats['output'] += 1
+        self.statsClient.incr('output', count=1)
         destination = self.destination + self.request.uri
         try:
             request = httpclient.HTTPRequest(destination, body=payload, method="POST")
             res = yield self.http_client.fetch(request)
             if res.code != 200:
-                stats['error'] += 1
+                self.statsClient.incr('forward.error', count=1)
         except Exception as e:
             self.logger.info("Error while splitting message {} input headers: {}, payload: {}"
                                 .format(e, self.request.headers, payload))
             # no response, i.e. timeout, see http://www.tornadoweb.org/en/stable/httpclient.html
             if e.args[0] == 599:
-                stats['timeout'] += 1
+                self.statsClient.incr('forward.timeout', count=1)
             else:
-                stats['error'] += 1
-
+                self.statsClient.incr('forward.exception', count=1)
 
 
 def make_app():
@@ -98,23 +98,6 @@ def make_app():
     ])
 
 
-def log_stats():
-    """
-    log a warning if errors or timeouts have been detected
-    """
-    if stats['error'] == 0:
-        return
-    if stats['timeout'] == 0:
-        return
-    logging.getLogger("tornado.application").warning('heroku2Logstash stats: {}'.format(stats))
-    stats.update(
-        input=0,
-        output=0,
-        error=0,
-        timeout=0
-    )
-
-
 def configure_logger():
     """
     configure logger object with handlers
@@ -125,7 +108,7 @@ def configure_logger():
 
     #  syslog
     handler = SysLogHandler(address='/dev/log')
-    app_log.setLevel(logging.WARNING)
+    handler.setLevel(logging.WARNING)
     formatter = logging.Formatter(
         'heroku2Logstash: { "loggerName":"%(name)s", "asciTime":"%(asctime)s", '
         '"pathName":"%(pathname)s", "logRecordCreationTime":"%(created)f", "functionName":"%(funcName)s", '
@@ -154,5 +137,4 @@ if __name__ == "__main__":
     server = HTTPServer(app)
     server.bind(8080)
     server.start(0)  # autodetect number of cores and fork a process for each
-    tornado.ioloop.PeriodicCallback(log_stats, 1000).start()  # each 10 minutes
     tornado.ioloop.IOLoop.instance().start()
