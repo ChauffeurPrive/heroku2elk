@@ -2,11 +2,11 @@ import tornado.ioloop
 import tornado.web
 from tornado import httpclient, gen
 from tornado.httpserver import HTTPServer
-from src.lib import syslogSplitter
+from src.lib.syslogSplitter import SyslogSplitter
 import logging
 from logging.handlers import SysLogHandler, RotatingFileHandler
 from statsd import StatsClient
-from src.config import MonitoringConfig
+from src.config import MonitoringConfig, TruncateConfig
 
 
 class HealthCheckHandler(tornado.web.RequestHandler):
@@ -28,10 +28,11 @@ class MainHandler(tornado.web.RequestHandler):
         self.logger = logging.getLogger("tornado.application")
         self.destination = destination
         self.http_client = httpclient.AsyncHTTPClient()
-        self.statsClient = StatsClient(
+        self.statsdClient = StatsClient(
             MonitoringConfig.metrics_host,
             MonitoringConfig.metrics_port,
             prefix='heroku2logstash')
+        self.syslogSplitter = SyslogSplitter(TruncateConfig(), self.statsdClient)
 
 
     def set_default_headers(self):
@@ -52,16 +53,16 @@ class MainHandler(tornado.web.RequestHandler):
         :return: HTTPStatus 200
         """
         try:
-            self.statsClient.incr('input', count=1)
+            self.statsdClient.incr('input', count=1)
             # 1. split
-            logs = syslogSplitter.split(self.request.body)
+            logs = self.syslogSplitter.split(self.request.body)
             # 2. forward
             yield [self._forward_request(l) for l in logs]
             self.set_status(200)
         except Exception as e:
             self.logger.info("Error while splitting message {} input headers: {}, payload: {}"
                                 .format(e, self.request.headers, self.request.body))
-            self.statsClient.incr('split.error', count=1)
+            self.statsdClient.incr('split.error', count=1)
             self.set_status(500)
 
 
@@ -70,21 +71,21 @@ class MainHandler(tornado.web.RequestHandler):
         """
         Instanciate an AsyncHTTPClient and send a request with the payload in parameters to the destination
         """
-        self.statsClient.incr('output', count=1)
+        self.statsdClient.incr('output', count=1)
         destination = self.destination + self.request.uri
         try:
             request = httpclient.HTTPRequest(destination, body=payload, method="POST")
             res = yield self.http_client.fetch(request)
             if res.code != 200:
-                self.statsClient.incr('forward.error', count=1)
+                self.statsdClient.incr('forward.error', count=1)
         except Exception as e:
             self.logger.info("Error while splitting message {} input headers: {}, payload: {}"
                                 .format(e, self.request.headers, payload))
             # no response, i.e. timeout, see http://www.tornadoweb.org/en/stable/httpclient.html
             if e.args[0] == 599:
-                self.statsClient.incr('forward.timeout', count=1)
+                self.statsdClient.incr('forward.timeout', count=1)
             else:
-                self.statsClient.incr('forward.exception', count=1)
+                self.statsdClient.incr('forward.exception', count=1)
 
 
 def make_app():
