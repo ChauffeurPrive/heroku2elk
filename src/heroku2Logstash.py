@@ -6,7 +6,9 @@ from src.lib.syslogSplitter import SyslogSplitter
 import logging
 from logging.handlers import SysLogHandler, RotatingFileHandler
 from statsd import StatsClient
-from src.config import MonitoringConfig, TruncateConfig
+from src.config import MonitoringConfig, TruncateConfig, AmqpConfig, MainConfig
+import pika
+import json
 
 
 class HealthCheckHandler(tornado.web.RequestHandler):
@@ -21,18 +23,16 @@ class MainHandler(tornado.web.RequestHandler):
     """ The Heroku HTTP drain handler class
     """
 
-    def initialize(self, destination):
+    def initialize(self, destination, channel, statsdClient):
         """
         handler initialisation
         """
         self.logger = logging.getLogger("tornado.application")
         self.destination = destination
         self.http_client = httpclient.AsyncHTTPClient()
-        self.statsdClient = StatsClient(
-            MonitoringConfig.metrics_host,
-            MonitoringConfig.metrics_port,
-            prefix='heroku2logstash')
+        self.statsdClient = statsdClient
         self.syslogSplitter = SyslogSplitter(TruncateConfig(), self.statsdClient)
+        self.channel = channel
 
 
     def set_default_headers(self):
@@ -57,13 +57,41 @@ class MainHandler(tornado.web.RequestHandler):
             # 1. split
             logs = self.syslogSplitter.split(self.request.body)
             # 2. forward
-            yield [self._forward_request(l) for l in logs]
+            if AmqpConfig.amqp_activated:
+                [self._push_to_AMQP(l) for l in logs]
+            else:
+                yield [self._forward_request(l) for l in logs]
             self.set_status(200)
         except Exception as e:
             self.logger.info("Error while splitting message {} input headers: {}, payload: {}"
                                 .format(e, self.request.headers, self.request.body))
             self.statsdClient.incr('split.error', count=1)
             self.set_status(500)
+
+    @gen.coroutine
+    def _push_to_AMQP(self, msg):
+        self.statsdClient.incr('amqp.output', count=1)
+        payload = {}
+        path = self.request.uri.split('/')[1:]
+        payload['type'] = path[0]
+        payload['parser_ver'] = path[1]
+        payload['env'] = path[2]
+        payload['app'] = path[3]
+        payload['message'] = msg.decode('utf-8')
+        payload['http_content_length'] = len(msg)
+        routing_key = "{}.{}.{}.{}".format(payload['type'], payload['parser_ver'], payload['env'], payload['app'])
+
+        if self.channel.basic_publish(exchange='logs',
+                              routing_key=routing_key,
+                              body=json.dumps(payload),
+                              properties=pika.BasicProperties(
+                                  delivery_mode=1,  # make message persistent
+                              ),
+                              mandatory=True
+                              ):
+            self.statsdClient.incr('amqp.output_delivered', count=1)
+        else:
+            self.statsdClient.incr('amqp.output_failure', count=1)
 
 
     @gen.coroutine
@@ -92,8 +120,26 @@ def make_app():
     """
     Create the tornado application
     """
+    statsdClient = StatsClient(
+        MonitoringConfig.metrics_host,
+        MonitoringConfig.metrics_port,
+        prefix='heroku2logstash')
+
+    logger = logging.getLogger("tornado.application")
+    logger.info("AMQP connecting to: exchange:{} host:{} port: {}"
+                     .format(AmqpConfig.exchange, AmqpConfig.host, AmqpConfig.port))
+    credentials = pika.PlainCredentials(AmqpConfig.user, AmqpConfig.password)
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters(host=AmqpConfig.host, port=AmqpConfig.port, credentials=credentials))
+    channel = connection.channel()
+    channel.exchange_declare(exchange=AmqpConfig.exchange, type='topic')
+    # Enabled delivery confirmations
+    channel.confirm_delivery()
+    logger.info("AMQP is connected"
+                     .format(AmqpConfig.exchange, AmqpConfig.host, AmqpConfig.port))
+
     return tornado.web.Application([
-        (r"/heroku/.*", MainHandler, dict( destination='http://127.0.0.1:8888')),
+        (r"/heroku/.*", MainHandler, dict(destination='http://127.0.0.1:8888', channel=channel, statsdClient=statsdClient)),
         (r"/api/healthcheck", HealthCheckHandler),
         (r"/api/heartbeat", HealthCheckHandler),
     ])
@@ -135,7 +181,10 @@ if __name__ == "__main__":
     configure_logger()
 
     app = make_app()
-    server = HTTPServer(app)
-    server.bind(8080)
-    server.start(0)  # autodetect number of cores and fork a process for each
+    if MainConfig.tornado_multiprocessing_activated:
+        server = HTTPServer(app)
+        server.bind(8080)
+        server.start(0)  # autodetect number of cores and fork a process for each
+    else:
+        app.listen(8080)
     tornado.ioloop.IOLoop.instance().start()

@@ -14,5 +14,5 @@ dependencies:
 
 test:
   override:
-    - python -m unittests
+    - python -m unittest
 
