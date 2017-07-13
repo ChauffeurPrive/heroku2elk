@@ -11,12 +11,6 @@ class TestH2LApp(AsyncHTTPTestCase):
 
     def setUp(self):
         super(TestH2LApp, self).setUp()
-        h2l.stats = {
-            'input': 0,
-            'output': 0,
-            'timeout': 0,
-            'error': 0
-        }
         self.async_patcher = patch('tornado.httpclient.AsyncHTTPClient')
         self.mocked_async_client = self.async_patcher.start()
 

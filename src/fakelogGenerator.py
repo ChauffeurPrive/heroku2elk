@@ -137,4 +137,4 @@ def run(url, client_count):
         list(map(stop_thread, threads))
 
 if __name__ == '__main__':
-    run('http://127.0.0.1:8080/heroku/v1/DummyAppName', 1)
+    run('http://127.0.0.1:8080/heroku/v1/production/DummyAppName', 1)
