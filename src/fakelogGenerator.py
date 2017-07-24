@@ -8,7 +8,7 @@ import time
 import pytz
 
 
-class RequestGenerator:
+class HerokuRequestGenerator:
     """
     Generates and send a fake request (aggregating n fake log lines)
     """
@@ -29,7 +29,7 @@ class RequestGenerator:
         msg_count = random.randrange(1, 10)
         payload = bytes()
         for n in range(msg_count):
-            payload += FakeLog().encode()
+            payload += FakeHerokuLog().encode()
 
         self.headers['Logplex-Msg-Count'] = str(msg_count)
         self.headers['Logplex-Frame-Id'] = str(self.frameCount)
@@ -40,7 +40,7 @@ class RequestGenerator:
             return None, payload
 
 
-class FakeLog:
+class FakeHerokuLog:
     """
     Generates a fake log line
     """
@@ -71,7 +71,7 @@ class GenWorker:
         return self.stats
 
     def run(self):
-        gen = RequestGenerator(self.url)
+        gen = HerokuRequestGenerator(self.url)
         while self.shouldStop is False:
             self.stats['sent'] += 1
             r, msg = gen.send_random_request()
@@ -138,3 +138,4 @@ def run(url, client_count):
 
 if __name__ == '__main__':
     run('http://127.0.0.1:8080/heroku/v1/production/DummyAppName', 1)
+    #run('http://127.0.0.1:8080/mobile/v1/production', 1)

@@ -9,17 +9,49 @@ from statsd import StatsClient
 from src.config import MonitoringConfig, TruncateConfig, AmqpConfig, MainConfig
 import pika
 import json
+import socket
 
 
 class HealthCheckHandler(tornado.web.RequestHandler):
-    """ A simple healthCheck handler
-        reply 200 to every GET called
+    """ The Heroku HealthCheck handler class
     """
+
+    def initialize(self, statsdClient):
+        """
+        handler initialisation
+        """
+        self.logger = logging.getLogger("tornado.application")
+        self.statsdClient = statsdClient
+        self.http_client = httpclient.AsyncHTTPClient()
+        self.hostname = socket.gethostname()
+
+    @gen.coroutine
     def get(self):
+        """ A simple healthCheck handler
+            reply 200 to every GET called
+        """
+        self.statsdClient.incr('heartbeat.{}'.format(self.hostname), count=1)
+        destination = 'http://127.0.0.1:15672/api/queues'
+        try:
+            request = httpclient.HTTPRequest(destination, method='GET', auth_mode='basic', auth_username=AmqpConfig.user, auth_password=AmqpConfig.password)
+            response = yield self.http_client.fetch(request)
+            stats = {}
+            for q in json.loads(response.body.decode('utf-8')):
+                stats[q['name']] = q['messages']
+                self.statsdClient.gauge('{}.{}'.format(q['name'], self.hostname), q['messages'])
+            self.write(json.dumps(stats))
+            self.set_status(response.code)
+        except Exception as error:
+            self.logger.info('Error while fetching AMQP({}) queue state: {}'
+                             .format(destination, error))
+            self.statsdClient.incr('heartbeat_failure.{}'.format(self.hostname), count=1)
+            self.set_status(500)
+
         self.set_status(200)
 
 
-class MainHandler(tornado.web.RequestHandler):
+
+class HerokuHandler(tornado.web.RequestHandler):
     """ The Heroku HTTP drain handler class
     """
 
@@ -41,6 +73,7 @@ class MainHandler(tornado.web.RequestHandler):
         """
         self.set_header('Content-Length', '0')
 
+    @gen.coroutine
     def post(self):
         """
         HTTP Post handler
@@ -50,7 +83,7 @@ class MainHandler(tornado.web.RequestHandler):
         :return: HTTPStatus 200
         """
         try:
-            self.statsdClient.incr('input', count=1)
+            self.statsdClient.incr('input.heroku', count=1)
             # 1. split
             logs = self.syslogSplitter.split(self.request.body)
             # 2. forward
@@ -66,7 +99,7 @@ class MainHandler(tornado.web.RequestHandler):
     def _push_to_AMQP(self, msg):
         try:
             self.statsdClient.incr('amqp.output', count=1)
-            payload = {}
+            payload = dict()
             path = self.request.uri.split('/')[1:]
             payload['type'] = path[0]
             payload['parser_ver'] = path[1]
@@ -87,10 +120,58 @@ class MainHandler(tornado.web.RequestHandler):
                 self.statsdClient.incr('amqp.output_delivered', count=1)
             else:
                 self.statsdClient.incr('amqp.output_failure', count=1)
+                self.logger.info('channel.basic_publish on routing_key({}) return False for payload: {}'
+                                 .format(routing_key, json.dumps(payload)))
         except Exception as e:
             self.statsdClient.incr('amqp.output_exception', count=1)
             self.logger.info("Error while pushing message to AMQP, exception: {} msg: {}, uri: {}"
                              .format(e, msg, self.request.uri))
+
+
+
+class MobileHandler(tornado.web.RequestHandler):
+    """ The Mobile HTTP handler class
+    """
+
+    def initialize(self, channel, statsdClient):
+        """
+        handler initialisation
+        """
+        self.logger = logging.getLogger("tornado.application")
+        self.statsdClient = statsdClient
+        self.channel = channel
+
+    @gen.coroutine
+    def post(self):
+        """
+        HTTP Post handler
+        1. Split the input payload into an array of bytes
+        2. send HTTP requests to logstash for each element of the array
+        3. aggregate answers
+        :return: HTTPStatus 200
+        """
+        try:
+            self.statsdClient.incr('input.mobile', count=1)
+            self.statsdClient.incr('amqp.output', count=1)
+            routing_key = self.request.uri.replace('/', '.')[1:]
+            print(routing_key, self.request.body)
+
+            if self.channel.basic_publish(exchange='logs',
+                                  routing_key=routing_key,
+                                  body=self.request.body,
+                                  properties=pika.BasicProperties(
+                                      delivery_mode=1,  # make message persistent
+                                  ),
+                                  mandatory=True
+                                  ):
+                self.statsdClient.incr('amqp.output_delivered', count=1)
+            else:
+                self.statsdClient.incr('amqp.output_failure', count=1)
+        except Exception as e:
+            self.statsdClient.incr('amqp.output_exception', count=1)
+            self.logger.info("Error while pushing mobile message to AMQP, exception: {} msg: {}, uri: {}"
+                             .format(e, self.request.body, self.request.uri))
+
 
 
 
@@ -113,13 +194,20 @@ def make_app():
     channel.exchange_declare(exchange=AmqpConfig.exchange, type='topic')
     # Enabled delivery confirmations
     channel.confirm_delivery()
-    logger.info("AMQP is connected"
+    logger.info("AMQP is connected exchange:{} host:{} port:{}"
                      .format(AmqpConfig.exchange, AmqpConfig.host, AmqpConfig.port))
 
+    # Declare the queues
+    channel.queue_declare(queue="mobile_integration_queue", durable=True, exclusive=False, auto_delete=False)
+    channel.queue_declare(queue="mobile_production_queue", durable=True, exclusive=False, auto_delete=False)
+    channel.queue_declare(queue="heroku_integration_queue", durable=True, exclusive=False, auto_delete=False)
+    channel.queue_declare(queue="heroku_production_queue", durable=True, exclusive=False, auto_delete=False)
+
     return tornado.web.Application([
-        (r"/heroku/.*", MainHandler, dict(channel=channel, statsdClient=statsdClient)),
-        (r"/api/healthcheck", HealthCheckHandler),
-        (r"/api/heartbeat", HealthCheckHandler),
+        (r"/heroku/.*", HerokuHandler, dict(channel=channel, statsdClient=statsdClient)),
+        (r"/mobile/.*", MobileHandler, dict(channel=channel, statsdClient=statsdClient)),
+        (r"/api/healthcheck", HealthCheckHandler, dict(statsdClient=statsdClient)),
+        (r"/api/heartbeat", HealthCheckHandler, dict(statsdClient=statsdClient)),
     ])
 
 
