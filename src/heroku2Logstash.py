@@ -10,6 +10,39 @@ from src.config import MonitoringConfig, TruncateConfig, AmqpConfig, MainConfig
 import pika
 import json
 import socket
+import os
+
+
+class SingleAMQPPerProcess:
+    __instance = dict()
+
+    def getInstance(self, pid):
+        if not pid in SingleAMQPPerProcess.__instance or SingleAMQPPerProcess.__instance[pid] is None:
+            SingleAMQPPerProcess.__instance[pid] = self.create_amqp_client(pid)
+        return SingleAMQPPerProcess.__instance[pid]
+
+    def create_amqp_client(self, pid):
+        logger = logging.getLogger("tornado.application")
+        logger.info("pid:{} AMQP connecting to: exchange:{} host:{} port: {}"
+                    .format(pid, AmqpConfig.exchange, AmqpConfig.host, AmqpConfig.port))
+        credentials = pika.PlainCredentials(AmqpConfig.user, AmqpConfig.password)
+        connection = pika.BlockingConnection(
+            pika.ConnectionParameters(host=AmqpConfig.host, port=AmqpConfig.port, credentials=credentials))
+        channel = connection.channel()
+        channel.exchange_declare(exchange=AmqpConfig.exchange, type='topic')
+        # Enabled delivery confirmations
+        channel.confirm_delivery()
+        logger.info("pid:{} AMQP is connected exchange:{} host:{} port:{}"
+                    .format(pid, AmqpConfig.exchange, AmqpConfig.host, AmqpConfig.port))
+
+        # Declare the queues
+        channel.queue_declare(queue="mobile_integration_queue", durable=True, exclusive=False, auto_delete=False)
+        channel.queue_declare(queue="mobile_production_queue", durable=True, exclusive=False, auto_delete=False)
+        channel.queue_declare(queue="heroku_integration_queue", durable=True, exclusive=False, auto_delete=False)
+        channel.queue_declare(queue="heroku_production_queue", durable=True, exclusive=False, auto_delete=False)
+        return channel;
+
+
 
 
 class HealthCheckHandler(tornado.web.RequestHandler):
@@ -55,14 +88,14 @@ class HerokuHandler(tornado.web.RequestHandler):
     """ The Heroku HTTP drain handler class
     """
 
-    def initialize(self, channel, statsdClient):
+    def initialize(self, statsdClient):
         """
         handler initialisation
         """
         self.logger = logging.getLogger("tornado.application")
         self.statsdClient = statsdClient
         self.syslogSplitter = SyslogSplitter(TruncateConfig(), self.statsdClient)
-        self.channel = channel
+        self.channel = SingleAMQPPerProcess().getInstance("heroku.{}".format(os.getpid()))
 
 
     def set_default_headers(self):
@@ -133,13 +166,13 @@ class MobileHandler(tornado.web.RequestHandler):
     """ The Mobile HTTP handler class
     """
 
-    def initialize(self, channel, statsdClient):
+    def initialize(self, statsdClient):
         """
         handler initialisation
         """
         self.logger = logging.getLogger("tornado.application")
         self.statsdClient = statsdClient
-        self.channel = channel
+        self.channel = SingleAMQPPerProcess().getInstance("mobile.{}".format(os.getpid()))
 
     @gen.coroutine
     def post(self):
@@ -184,28 +217,9 @@ def make_app():
         MonitoringConfig.metrics_port,
         prefix='heroku2logstash')
 
-    logger = logging.getLogger("tornado.application")
-    logger.info("AMQP connecting to: exchange:{} host:{} port: {}"
-                     .format(AmqpConfig.exchange, AmqpConfig.host, AmqpConfig.port))
-    credentials = pika.PlainCredentials(AmqpConfig.user, AmqpConfig.password)
-    connection = pika.BlockingConnection(
-        pika.ConnectionParameters(host=AmqpConfig.host, port=AmqpConfig.port, credentials=credentials))
-    channel = connection.channel()
-    channel.exchange_declare(exchange=AmqpConfig.exchange, type='topic')
-    # Enabled delivery confirmations
-    channel.confirm_delivery()
-    logger.info("AMQP is connected exchange:{} host:{} port:{}"
-                     .format(AmqpConfig.exchange, AmqpConfig.host, AmqpConfig.port))
-
-    # Declare the queues
-    channel.queue_declare(queue="mobile_integration_queue", durable=True, exclusive=False, auto_delete=False)
-    channel.queue_declare(queue="mobile_production_queue", durable=True, exclusive=False, auto_delete=False)
-    channel.queue_declare(queue="heroku_integration_queue", durable=True, exclusive=False, auto_delete=False)
-    channel.queue_declare(queue="heroku_production_queue", durable=True, exclusive=False, auto_delete=False)
-
     return tornado.web.Application([
-        (r"/heroku/.*", HerokuHandler, dict(channel=channel, statsdClient=statsdClient)),
-        (r"/mobile/.*", MobileHandler, dict(channel=channel, statsdClient=statsdClient)),
+        (r"/heroku/.*", HerokuHandler, dict(statsdClient=statsdClient)),
+        (r"/mobile/.*", MobileHandler, dict(statsdClient=statsdClient)),
         (r"/api/healthcheck", HealthCheckHandler, dict(statsdClient=statsdClient)),
         (r"/api/heartbeat", HealthCheckHandler, dict(statsdClient=statsdClient)),
     ])
@@ -241,16 +255,19 @@ def configure_logger():
     file_handler.setLevel(logging.INFO)
     file_handler.formatter = default_formatter
     app_log.addHandler(file_handler)
+    return app_log
 
 
 if __name__ == "__main__":
-    configure_logger()
+    logger = configure_logger()
 
     app = make_app()
     if MainConfig.tornado_multiprocessing_activated:
+        logger.info("Start H2L in multi-processing mode")
         server = HTTPServer(app)
         server.bind(8080)
         server.start(0)  # autodetect number of cores and fork a process for each
     else:
+        logger.info("Start H2L in single-processing mode")
         app.listen(8080)
     tornado.ioloop.IOLoop.instance().start()

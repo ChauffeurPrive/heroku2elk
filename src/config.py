@@ -1,7 +1,7 @@
 from os import environ
 
 class MainConfig:
-    tornado_multiprocessing_activated = environ.get('TORNADO_MULTIPROCESSING_ACTIVATED', 'false') is 'true'
+    tornado_multiprocessing_activated = environ.get('TORNADO_MULTIPROCESSING_ACTIVATED', 'true') is 'true'
 
 class MonitoringConfig:
     """
