@@ -7,7 +7,6 @@ from logging.handlers import SysLogHandler, RotatingFileHandler
 from statsd import StatsClient
 import pika
 import json
-import socket
 import os
 
 from heroku2elk.config import MonitoringConfig, TruncateConfig, AmqpConfig, MainConfig
@@ -27,7 +26,7 @@ class HealthCheckHandler(tornado.web.RequestHandler):
         self.statsdClient = StatsClient(
             MonitoringConfig.metrics_host,
             MonitoringConfig.metrics_port,
-            prefix='heroku2logstash.{}'.format(socket.gethostname()))
+            prefix=MonitoringConfig.metrics_prefix)
         self.http_client = httpclient.AsyncHTTPClient()
 
 
@@ -68,7 +67,7 @@ class HerokuHandler(tornado.web.RequestHandler):
         self.statsdClient = StatsClient(
             MonitoringConfig.metrics_host,
             MonitoringConfig.metrics_port,
-            prefix='heroku2logstash.{}'.format(socket.gethostname()))
+            prefix=MonitoringConfig.metrics_prefix)
         self.syslogSplitter = SyslogSplitter(TruncateConfig(), self.statsdClient)
 
     def set_default_headers(self):
@@ -142,7 +141,7 @@ class MobileHandler(tornado.web.RequestHandler):
         self.statsdClient = StatsClient(
             MonitoringConfig.metrics_host,
             MonitoringConfig.metrics_port,
-            prefix='heroku2logstash.{}'.format(socket.gethostname()))
+            prefix=MonitoringConfig.metrics_prefix)
 
 
     @gen.coroutine

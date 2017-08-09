@@ -25,7 +25,7 @@ class AMQPConnection:
             self.statsdClient = StatsClient(
                 MonitoringConfig.metrics_host,
                 MonitoringConfig.metrics_port,
-                prefix='heroku2logstash')
+                prefix=MonitoringConfig.metrics_prefix)
 
         @gen.coroutine
         def on_exchange_declareok(self, unused_frame):

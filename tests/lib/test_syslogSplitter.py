@@ -1,6 +1,6 @@
 import unittest
 from heroku2elk.lib.syslogSplitter import SyslogSplitter
-from mock import patch, Mock
+from mock import Mock
 from heroku2elk.config import TruncateConfig
 
 class SyslogSplitterTest(unittest.TestCase):
