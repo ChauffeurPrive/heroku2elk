@@ -75,6 +75,7 @@ class AMQPConnection:
             if confirmation_type == 'ack':
                 self.statsdClient.incr('amqp.output_delivered', count=1)
             elif confirmation_type == 'nack':
+                self.logger.error("delivery_confirmation failed {}".format(method_frame))
                 self.statsdClient.incr('amqp.output_failure', count=1)
 
         def create_amqp_client(self):

@@ -8,6 +8,7 @@ from statsd import StatsClient
 import pika
 import json
 import socket
+import os
 
 from heroku2elk.config import MonitoringConfig, TruncateConfig, AmqpConfig, MainConfig
 from heroku2elk.lib.syslogSplitter import SyslogSplitter
@@ -231,4 +232,7 @@ if __name__ == "__main__":
     else:
         logger.info("Start H2L in single-processing mode")
         app.listen(8080)
+
+    # instantiate an AMQP connection at start to create the queues (needed when logstash starts)
+    tornado.ioloop.IOLoop.instance().add_future(AMQPConnection().get_channel(), lambda x: logger.info("pid:{} AMQP is connected".format(os.getpid())))
     tornado.ioloop.IOLoop.instance().start()
