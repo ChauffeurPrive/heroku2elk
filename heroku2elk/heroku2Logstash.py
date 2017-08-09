@@ -211,7 +211,7 @@ def configure_logger():
 if __name__ == "__main__":
     logger = configure_logger()
 
-    app = make_app(tornado.ioloop.IOLoop.instance())
+    app = make_app(None)
     if MainConfig.tornado_multiprocessing_activated:
         logger.info("Start H2L in multi-processing mode")
         server = HTTPServer(app)
@@ -222,5 +222,5 @@ if __name__ == "__main__":
         app.listen(8080)
 
     # instantiate an AMQP connection at start to create the queues (needed when logstash starts)
-    tornado.ioloop.IOLoop.instance().add_future(AMQPConnectionSingleton().get_channel(), lambda x: logger.info("pid:{} AMQP is connected".format(os.getpid())))
+    tornado.ioloop.IOLoop.instance().add_future(AMQPConnectionSingleton().get_channel(tornado.ioloop.IOLoop.instance()), lambda x: logger.info("pid:{} AMQP is connected".format(os.getpid())))
     tornado.ioloop.IOLoop.instance().start()
