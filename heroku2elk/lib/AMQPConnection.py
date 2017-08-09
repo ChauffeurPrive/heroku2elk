@@ -1,3 +1,4 @@
+import tornado.ioloop
 from tornado import gen
 from tornado.concurrent import Future
 import logging
@@ -7,16 +8,21 @@ import pika
 import os
 
 
-class AMQPConnection:
+class AMQPConnectionSingleton:
     __instance = None
 
     @gen.coroutine
-    def get_channel(self):
-        if AMQPConnection.__instance is None:
-            AMQPConnection.__instance = yield AMQPConnection.__OnlyOne().create_amqp_client()
-        return AMQPConnection.__instance
+    def get_channel(self, ioloop):
+        if AMQPConnectionSingleton.__instance is None:
+            AMQPConnectionSingleton.__instance = yield AMQPConnectionSingleton.AMQPConnection().create_amqp_client(ioloop)
+        return AMQPConnectionSingleton.__instance
 
-    class __OnlyOne:
+    def close_channel(self):
+        if AMQPConnectionSingleton.__instance:
+            AMQPConnectionSingleton.__instance.close()
+        AMQPConnectionSingleton.__instance = None
+
+    class AMQPConnection:
         def __init__(self):
             self._connection = None
             self._channel = None
@@ -78,13 +84,13 @@ class AMQPConnection:
                 self.logger.error("delivery_confirmation failed {}".format(method_frame))
                 self.statsdClient.incr('amqp.output_failure', count=1)
 
-        def create_amqp_client(self):
+        def create_amqp_client(self, ioloop):
             self.logger.info("pid:{} AMQP connecting to: exchange:{} host:{} port: {}"
                         .format(os.getpid(), AmqpConfig.exchange, AmqpConfig.host, AmqpConfig.port))
             credentials = pika.PlainCredentials(AmqpConfig.user, AmqpConfig.password)
 
             pika.TornadoConnection(
                 pika.ConnectionParameters(host=AmqpConfig.host, port=AmqpConfig.port, credentials=credentials),
-                self.on_connection_open, on_close_callback=self.on_connection_close)
+                self.on_connection_open, on_close_callback=self.on_connection_close, custom_ioloop=ioloop)
 
             return self.futureChannel;

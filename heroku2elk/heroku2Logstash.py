@@ -11,7 +11,7 @@ import os
 
 from heroku2elk.config import MonitoringConfig, TruncateConfig, AmqpConfig, MainConfig
 from heroku2elk.lib.syslogSplitter import SyslogSplitter
-from heroku2elk.lib.AMQPConnection import AMQPConnection
+from heroku2elk.lib.AMQPConnection import AMQPConnectionSingleton
 
 
 class HealthCheckHandler(tornado.web.RequestHandler):
@@ -36,22 +36,6 @@ class HealthCheckHandler(tornado.web.RequestHandler):
             reply 200 to every GET called
         """
         self.statsdClient.incr('heartbeat', count=1)
-        destination = 'http://127.0.0.1:15672/api/queues'
-        try:
-            request = httpclient.HTTPRequest(destination, method='GET', auth_mode='basic', auth_username=AmqpConfig.user, auth_password=AmqpConfig.password)
-            response = yield self.http_client.fetch(request)
-            stats = {}
-            for q in json.loads(response.body.decode('utf-8')):
-                stats[q['name']] = q['messages']
-                self.statsdClient.gauge('{}'.format(q['name']), q['messages'])
-            self.write(json.dumps(stats))
-            self.set_status(response.code)
-        except Exception as error:
-            self.logger.info('Error while fetching AMQP({}) queue state: {}'
-                             .format(destination, error))
-            self.statsdClient.incr('heartbeat_failure', count=1)
-            self.set_status(500)
-
         self.set_status(200)
 
 
@@ -59,7 +43,7 @@ class HerokuHandler(tornado.web.RequestHandler):
     """ The Heroku HTTP drain handler class
     """
 
-    def initialize(self):
+    def initialize(self, ioloop):
         """
         handler initialisation
         """
@@ -69,6 +53,7 @@ class HerokuHandler(tornado.web.RequestHandler):
             MonitoringConfig.metrics_port,
             prefix=MonitoringConfig.metrics_prefix)
         self.syslogSplitter = SyslogSplitter(TruncateConfig(), self.statsdClient)
+        self.ioloop = ioloop
 
     def set_default_headers(self):
         """
@@ -92,7 +77,7 @@ class HerokuHandler(tornado.web.RequestHandler):
             # 1. split
             logs = self.syslogSplitter.split(self.request.body)
             # 2. forward
-            channel = yield AMQPConnection().get_channel()
+            channel = yield AMQPConnectionSingleton().get_channel(self.ioloop)
             [self._push_to_AMQP(channel, l) for l in logs]
             self.set_status(200)
         except Exception as e:
@@ -133,7 +118,7 @@ class MobileHandler(tornado.web.RequestHandler):
     """ The Mobile HTTP handler class
     """
 
-    def initialize(self):
+    def initialize(self, ioloop):
         """
         handler initialisation
         """
@@ -142,6 +127,7 @@ class MobileHandler(tornado.web.RequestHandler):
             MonitoringConfig.metrics_host,
             MonitoringConfig.metrics_port,
             prefix=MonitoringConfig.metrics_prefix)
+        self.ioloop = ioloop
 
 
     @gen.coroutine
@@ -154,7 +140,7 @@ class MobileHandler(tornado.web.RequestHandler):
         :return: HTTPStatus 200
         """
         try:
-            channel = AMQPConnection().get_channel()
+            channel = yield AMQPConnectionSingleton().get_channel(self.ioloop)
             self.statsdClient.incr('input.mobile', count=1)
             self.statsdClient.incr('amqp.output', count=1)
             routing_key = self.request.uri.replace('/', '.')[1:]
@@ -173,17 +159,20 @@ class MobileHandler(tornado.web.RequestHandler):
                              .format(e, self.request.body, self.request.uri))
 
 
-def make_app():
+def make_app(ioloop):
     """
     Create the tornado application
     """
 
     return tornado.web.Application([
-        (r"/heroku/.*", HerokuHandler, ),
-        (r"/mobile/.*", MobileHandler, ),
+        (r"/heroku/.*", HerokuHandler, dict(ioloop=ioloop)),
+        (r"/mobile/.*", MobileHandler, dict(ioloop=ioloop)),
         (r"/api/healthcheck", HealthCheckHandler, ),
         (r"/api/heartbeat", HealthCheckHandler, ),
     ])
+
+def close_app():
+    AMQPConnectionSingleton().close_channel()
 
 
 def configure_logger():
@@ -222,7 +211,7 @@ def configure_logger():
 if __name__ == "__main__":
     logger = configure_logger()
 
-    app = make_app()
+    app = make_app(tornado.ioloop.IOLoop.instance())
     if MainConfig.tornado_multiprocessing_activated:
         logger.info("Start H2L in multi-processing mode")
         server = HTTPServer(app)
@@ -233,5 +222,5 @@ if __name__ == "__main__":
         app.listen(8080)
 
     # instantiate an AMQP connection at start to create the queues (needed when logstash starts)
-    tornado.ioloop.IOLoop.instance().add_future(AMQPConnection().get_channel(), lambda x: logger.info("pid:{} AMQP is connected".format(os.getpid())))
+    tornado.ioloop.IOLoop.instance().add_future(AMQPConnectionSingleton().get_channel(), lambda x: logger.info("pid:{} AMQP is connected".format(os.getpid())))
     tornado.ioloop.IOLoop.instance().start()

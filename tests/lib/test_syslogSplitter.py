@@ -3,6 +3,7 @@ from heroku2elk.lib.syslogSplitter import SyslogSplitter
 from mock import Mock
 from heroku2elk.config import TruncateConfig
 
+
 class SyslogSplitterTest(unittest.TestCase):
     def setUp(self):
         self.conf = TruncateConfig()

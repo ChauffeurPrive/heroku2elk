@@ -9,10 +9,13 @@ machine:
 dependencies:
   override:
     - pip install --upgrade pip
-    - pip install -r requirements.txt
-
+    - pip install -r dev.txt
+    - pip install codecov
+  pre:
+    - sudo service rabbitmq-server start
 
 test:
   override:
-    - python -m unittest
+    - py.test tests/
+    - codecov -t $CODECOV_TOKEN || echo 'Sending coverage failed'
 
