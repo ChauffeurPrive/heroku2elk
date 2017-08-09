@@ -27,16 +27,16 @@ class HealthCheckHandler(tornado.web.RequestHandler):
         self.statsdClient = StatsClient(
             MonitoringConfig.metrics_host,
             MonitoringConfig.metrics_port,
-            prefix='heroku2logstash')
+            prefix='heroku2logstash.{}'.format(socket.gethostname()))
         self.http_client = httpclient.AsyncHTTPClient()
-        self.hostname = socket.gethostname()
+
 
     @gen.coroutine
     def get(self):
         """ A simple healthCheck handler
             reply 200 to every GET called
         """
-        self.statsdClient.incr('heartbeat.{}'.format(self.hostname), count=1)
+        self.statsdClient.incr('heartbeat', count=1)
         destination = 'http://127.0.0.1:15672/api/queues'
         try:
             request = httpclient.HTTPRequest(destination, method='GET', auth_mode='basic', auth_username=AmqpConfig.user, auth_password=AmqpConfig.password)
@@ -44,13 +44,13 @@ class HealthCheckHandler(tornado.web.RequestHandler):
             stats = {}
             for q in json.loads(response.body.decode('utf-8')):
                 stats[q['name']] = q['messages']
-                self.statsdClient.gauge('{}.{}'.format(q['name'], self.hostname), q['messages'])
+                self.statsdClient.gauge('{}'.format(q['name']), q['messages'])
             self.write(json.dumps(stats))
             self.set_status(response.code)
         except Exception as error:
             self.logger.info('Error while fetching AMQP({}) queue state: {}'
                              .format(destination, error))
-            self.statsdClient.incr('heartbeat_failure.{}'.format(self.hostname), count=1)
+            self.statsdClient.incr('heartbeat_failure', count=1)
             self.set_status(500)
 
         self.set_status(200)
@@ -68,7 +68,7 @@ class HerokuHandler(tornado.web.RequestHandler):
         self.statsdClient = StatsClient(
             MonitoringConfig.metrics_host,
             MonitoringConfig.metrics_port,
-            prefix='heroku2logstash')
+            prefix='heroku2logstash.{}'.format(socket.gethostname()))
         self.syslogSplitter = SyslogSplitter(TruncateConfig(), self.statsdClient)
 
     def set_default_headers(self):
@@ -142,7 +142,7 @@ class MobileHandler(tornado.web.RequestHandler):
         self.statsdClient = StatsClient(
             MonitoringConfig.metrics_host,
             MonitoringConfig.metrics_port,
-            prefix='heroku2logstash')
+            prefix='heroku2logstash.{}'.format(socket.gethostname()))
 
 
     @gen.coroutine
