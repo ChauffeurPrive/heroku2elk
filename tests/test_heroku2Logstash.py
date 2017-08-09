@@ -1,6 +1,6 @@
 import tornado
 from tornado.testing import AsyncHTTPTestCase
-import src.heroku2Logstash as h2l
+import heroku2elk.heroku2Logstash as h2l
 from mock import patch, Mock
 from tornado import httpclient, gen
 
@@ -39,25 +39,15 @@ class TestH2LApp(AsyncHTTPTestCase):
         self.assertEqual(response.code, 500)
         self.assertEqual(len(response.body), 0)
 
-    def test_H2L_logstash_reply_500(self):
-        request = tornado.httpclient.HTTPRequest('http://127.0.0.1:8888/heroku/v1/toto', method="POST")
-        http_response = tornado.httpclient.HTTPResponse(request, 500, buffer='')
-        @gen.coroutine
-        def handler(res):
-            return http_response
-        self.mocked_async_client().fetch.side_effect = handler
+    def test_H2L_heroku_push_to_amqp_failure(self):
+
         payload = b"83 <40>1 2017-06-14T13:52:29+00:00 host app web.3 - State changed from starting to up\n119 <40>1 2017-06-14T13:53:26+00:00 host app web.3 - Starting process with command `bundle exec rackup config.ru -p 24405`"
         response = self.fetch('/heroku/v1/toto', method='POST', body=payload)
         self.assertEqual(response.code, 200)
         self.assertEqual(len(response.body), 0)
 
     def test_H2L_logstash_reply_200(self):
-        request = tornado.httpclient.HTTPRequest('http://127.0.0.1:8888/heroku/v1/toto', method="POST")
-        http_response = tornado.httpclient.HTTPResponse(request, 200, buffer='')
-        @gen.coroutine
-        def handler(obj):
-            return http_response
-        self.mocked_async_client().fetch.side_effect = handler
+
         payload = b"83 <40>1 2017-06-14T13:52:29+00:00 host app web.3 - State changed from starting to up\n119 <40>1 2017-06-14T13:53:26+00:00 host app web.3 - Starting process with command `bundle exec rackup config.ru -p 24405`"
         response = self.fetch('/heroku/v1/toto', method='POST', body=payload)
         self.assertEqual(response.code, 200)

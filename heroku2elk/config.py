@@ -17,6 +17,8 @@ class TruncateConfig:
         """
     truncate_activated = environ.get('TRUNCATE_ACTIVATION', 'true') is 'true'
     truncate_max_msg_length = int(environ.get('TRUNCATE_MAX_MSG_LENGTH', '1000'))
+    stack_pattern = environ.get('TRUNCATE_EXCEPT_STACK_PATTERN', 'stack')
+    token_pattern = environ.get('REPLACE_TOKEN_PATTERN', '(token":")(.*?)(")')
 
 
 class AmqpConfig:
