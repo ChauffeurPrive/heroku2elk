@@ -9,7 +9,7 @@ import json
 
 class TestH2LApp(AsyncHTTPTestCase):
     def get_app(self):
-        configure_logger()
+        #configure_logger()
         return h2l.make_app(self.io_loop)
 
     def setUp(self):
