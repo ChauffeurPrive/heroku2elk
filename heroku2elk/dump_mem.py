@@ -5,6 +5,8 @@ from tracemalloc import start, Filter, take_snapshot
 
 
 def record_top(key_type='lineno', limit=10):
+    '''see https://docs.python.org/3.5/library/tracemalloc.html#pretty-top
+    Requires python 3.4+.'''
     kb = 2**10
     logger = getLogger("tornado.application")
     record = logger.info
