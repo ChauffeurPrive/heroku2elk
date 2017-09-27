@@ -237,9 +237,8 @@ if __name__ == "__main__":
     # instantiate an AMQP connection at start to create the queues
     # (needed when logstash starts)
     ins = tornado.ioloop.IOLoop.instance()
-    tornado.ioloop.IOLoop.instance().add_future(
-               AMQPConnectionSingleton().get_channel(ins),
-               lambda x: logger.info("AMQP is connected"))
+    ins.add_future(AMQPConnectionSingleton().get_channel(ins),
+                   lambda x: logger.info("AMQP is connected"))
     if MainConfig.tornado_debug:
         from dump_mem import record_top, start
         start()
