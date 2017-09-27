@@ -7,9 +7,10 @@ from logging.handlers import SysLogHandler, RotatingFileHandler
 from statsd import StatsClient
 import pika
 import json
-import os
+from os import getpid
 
-from heroku2elk.config import MonitoringConfig, TruncateConfig, AmqpConfig, MainConfig
+from heroku2elk.config import MonitoringConfig, TruncateConfig, \
+                              AmqpConfig, MainConfig
 from heroku2elk.lib.syslogSplitter import SyslogSplitter
 from heroku2elk.lib.AMQPConnection import AMQPConnectionSingleton
 
@@ -81,8 +82,9 @@ class HerokuHandler(tornado.web.RequestHandler):
             [self._push_to_AMQP(channel, l) for l in logs]
             self.set_status(200)
         except Exception as e:
-            self.logger.info("Error while forwarding message, errors: {} input headers: {}, payload: {}"
-                                .format(e, self.request.headers, self.request.body))
+            self.logger.info("Error while forwarding message, errors: {} "
+                             "input headers: {}, payload: {}".format(e,
+                             self.request.headers, self.request.body))
             self.statsdClient.incr('split.error', count=1)
             self.set_status(500)
 
@@ -97,20 +99,24 @@ class HerokuHandler(tornado.web.RequestHandler):
             payload['app'] = path[3]
             payload['message'] = msg
             payload['http_content_length'] = len(msg)
-            routing_key = "{}.{}.{}.{}".format(payload['type'], payload['parser_ver'], payload['env'], payload['app'])
+            routing_key = "{}.{}.{}.{}".format(payload['type'],
+                                               payload['parser_ver'],
+                                               payload['env'], payload['app'])
 
             channel.basic_publish(exchange='logs',
                                   routing_key=routing_key,
                                   body=json.dumps(payload),
                                   properties=pika.BasicProperties(
-                                      delivery_mode=1,  # make message persistent
+                                      delivery_mode=1,
+                                      # make message persistent
                                   ),
                                   mandatory=True
                                   )
 
         except Exception as e:
             self.statsdClient.incr('amqp.output_exception', count=1)
-            self.logger.info("Error while pushing message to AMQP, exception: {} msg: {}, uri: {}"
+            self.logger.info("Error while pushing message to AMQP, exception:"
+                             " {} msg: {}, uri: {}"
                              .format(e, msg, self.request.uri))
 
 
@@ -149,13 +155,15 @@ class MobileHandler(tornado.web.RequestHandler):
                                        routing_key=routing_key,
                                        body=self.request.body,
                                        properties=pika.BasicProperties(
-                                          delivery_mode=1,  # make message persistent
+                                          delivery_mode=1,
+                                          # make message persistent
                                        ),
                                        mandatory=True
                                        )
         except Exception as e:
             self.statsdClient.incr('amqp.output_exception', count=1)
-            self.logger.info("Error while pushing mobile message to AMQP, exception: {} msg: {}, uri: {}"
+            self.logger.info("Error while pushing mobile message to AMQP, "
+                             "exception: {} msg: {}, uri: {}"
                              .format(e, self.request.body, self.request.uri))
 
 
@@ -187,10 +195,13 @@ def configure_logger():
     handler = SysLogHandler(address='/dev/log')
     handler.setLevel(logging.WARNING)
     formatter = logging.Formatter(
-        'heroku2Logstash: { "loggerName":"%(name)s", "asciTime":"%(asctime)s", '
-        '"pathName":"%(pathname)s", "logRecordCreationTime":"%(created)f", "functionName":"%(funcName)s", '
-        '"levelNo":"%(levelno)s", "lineNo":"%(lineno)d", "time":"%(msecs)d", "levelName":"%(levelname)s", '
-        '"message":"%(message)s"}')
+        'heroku2Logstash: { "loggerName":"%(name)s", '
+        '"asciTime":"%(asctime)s", "pathName":"%(pathname)s", '
+        '"logRecordCreationTime":"%(created)f", '
+        '"functionName":"%(funcName)s", '
+        '"levelNo":"%(levelno)s", "lineNo":"%(lineno)d", "time":"%(msecs)d", '
+        '"levelName":"%(levelname)s", pid: %d,'
+        '"message":"%(message)s"}' % getpid())
     handler.formatter = formatter
     app_log.addHandler(handler)
 
@@ -200,8 +211,9 @@ def configure_logger():
     ch.formatter = default_formatter
     app_log.addHandler(ch)
 
-    # File log (max 10g: 10*1g)
-    file_handler = RotatingFileHandler('Heroku2Logstash.log', maxBytes=1000000000, backupCount=10)
+    # File log (max 10GB: 10*é**30B)
+    file_handler = RotatingFileHandler('Heroku2Logstash.log',
+                                       maxBytes=10*2**30, backupCount=10)
     file_handler.setLevel(logging.INFO)
     file_handler.formatter = default_formatter
     app_log.addHandler(file_handler)
@@ -216,11 +228,21 @@ if __name__ == "__main__":
         logger.info("Start H2L in multi-processing mode")
         server = HTTPServer(app)
         server.bind(8080)
-        server.start(0)  # autodetect number of cores and fork a process for each
+        # autodetect number of cores and fork a process for each
+        server.start(0)
     else:
         logger.info("Start H2L in single-processing mode")
         app.listen(8080)
 
-    # instantiate an AMQP connection at start to create the queues (needed when logstash starts)
-    tornado.ioloop.IOLoop.instance().add_future(AMQPConnectionSingleton().get_channel(tornado.ioloop.IOLoop.instance()), lambda x: logger.info("pid:{} AMQP is connected".format(os.getpid())))
-    tornado.ioloop.IOLoop.instance().start()
+    # instantiate an AMQP connection at start to create the queues
+    # (needed when logstash starts)
+    ins =  tornado.ioloop.IOLoop.instance()
+    tornado.ioloop.IOLoop.instance().add_future(
+               AMQPConnectionSingleton().get_channel(ins),
+               lambda x: logger.info("AMQP is connected"))
+    if MainConfig.tornado_debug:
+        from dump_mem import record_top, start
+        start()
+        tornado.ioloop.IOLoop.instance().PeriodicCallback(record_top, 1800*10**3)
+
+    ins.start()
