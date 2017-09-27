@@ -30,7 +30,6 @@ class HealthCheckHandler(tornado.web.RequestHandler):
             prefix=MonitoringConfig.metrics_prefix)
         self.http_client = httpclient.AsyncHTTPClient()
 
-
     @gen.coroutine
     def get(self):
         """ A simple healthCheck handler
@@ -53,7 +52,8 @@ class HerokuHandler(tornado.web.RequestHandler):
             MonitoringConfig.metrics_host,
             MonitoringConfig.metrics_port,
             prefix=MonitoringConfig.metrics_prefix)
-        self.syslogSplitter = SyslogSplitter(TruncateConfig(), self.statsdClient)
+        self.syslogSplitter = SyslogSplitter(TruncateConfig(),
+                                             self.statsdClient)
         self.ioloop = ioloop
 
     def set_default_headers(self):
@@ -83,8 +83,8 @@ class HerokuHandler(tornado.web.RequestHandler):
             self.set_status(200)
         except Exception as e:
             self.logger.info("Error while forwarding message, errors: {} "
-                             "input headers: {}, payload: {}".format(e,
-                             self.request.headers, self.request.body))
+                             "input headers: {}, payload: {}".format(
+                                 e, self.request.headers, self.request.body))
             self.statsdClient.incr('split.error', count=1)
             self.set_status(500)
 
@@ -135,7 +135,6 @@ class MobileHandler(tornado.web.RequestHandler):
             prefix=MonitoringConfig.metrics_prefix)
         self.ioloop = ioloop
 
-
     @gen.coroutine
     def post(self):
         """
@@ -152,14 +151,14 @@ class MobileHandler(tornado.web.RequestHandler):
             routing_key = self.request.uri.replace('/', '.')[1:]
 
             channel.basic_publish(exchange='logs',
-                                       routing_key=routing_key,
-                                       body=self.request.body,
-                                       properties=pika.BasicProperties(
+                                  routing_key=routing_key,
+                                  body=self.request.body,
+                                  properties=pika.BasicProperties(
                                           delivery_mode=1,
                                           # make message persistent
                                        ),
-                                       mandatory=True
-                                       )
+                                  mandatory=True
+                                  )
         except Exception as e:
             self.statsdClient.incr('amqp.output_exception', count=1)
             self.logger.info("Error while pushing mobile message to AMQP, "
@@ -173,11 +172,12 @@ def make_app(ioloop):
     """
 
     return tornado.web.Application([
-        (r"/heroku/.*", HerokuHandler, dict(ioloop=ioloop)),
-        (r"/mobile/.*", MobileHandler, dict(ioloop=ioloop)),
-        (r"/api/healthcheck", HealthCheckHandler, ),
-        (r"/api/heartbeat", HealthCheckHandler, ),
-    ])
+            (r"/heroku/.*", HerokuHandler, dict(ioloop=ioloop)),
+            (r"/mobile/.*", MobileHandler, dict(ioloop=ioloop)),
+            (r"/api/healthcheck", HealthCheckHandler, ),
+            (r"/api/heartbeat", HealthCheckHandler, ),
+           ])
+
 
 def close_app():
     AMQPConnectionSingleton().close_channel()
@@ -236,13 +236,13 @@ if __name__ == "__main__":
 
     # instantiate an AMQP connection at start to create the queues
     # (needed when logstash starts)
-    ins =  tornado.ioloop.IOLoop.instance()
+    ins = tornado.ioloop.IOLoop.instance()
     tornado.ioloop.IOLoop.instance().add_future(
                AMQPConnectionSingleton().get_channel(ins),
                lambda x: logger.info("AMQP is connected"))
     if MainConfig.tornado_debug:
         from dump_mem import record_top, start
         start()
-        tornado.ioloop.IOLoop.instance().PeriodicCallback(record_top, 1800*10**3)
+        ins.PeriodicCallback(record_top, 1800*10**3)
 
     ins.start()
