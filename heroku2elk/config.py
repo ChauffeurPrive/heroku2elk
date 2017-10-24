@@ -5,7 +5,7 @@ get = environ.get
 class MainConfig:
     tornado_multiprocessing_activated = get(
             'TORNADO_MULTIPROCESSING_ACTIVATED', 'true') == 'true'
-    tornado_debug = get('TORNADO_DEBUG', 'true') == 'true'
+    tornado_debug = get('TORNADO_DEBUG', 'false') == 'true'
 
 
 class MonitoringConfig:

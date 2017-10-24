@@ -1,25 +1,22 @@
-from tornado.testing import AsyncHTTPTestCase, gen_test
+import tornado
 from tornado.concurrent import Future
-import heroku2elk.heroku2Logstash as h2l
-from heroku2elk.heroku2Logstash import configure_logger
+from tornado.testing import AsyncHTTPTestCase, gen_test
+
+from heroku2elk.handlers.mobile import MobileHandler
 from heroku2elk.config import AmqpConfig
 from heroku2elk.lib.AMQPConnection import AMQPConnectionSingleton
 
 
-class TestH2LApp(AsyncHTTPTestCase):
+class TestMobile(AsyncHTTPTestCase):
     def get_app(self):
-        #configure_logger()
-        return h2l.make_app(self.io_loop)
+        return tornado.web.Application([(r"/mobile/.*", MobileHandler, dict(ioloop=self.io_loop)),])
 
     def setUp(self):
-        super(TestH2LApp, self).setUp()
-
-    def tearDown(self):
-        h2l.close_app()
+        super(TestMobile, self).setUp()
 
     @gen_test
-    def test_H2L_mobile_push_to_amqp_success(self):
-        self._channel = yield AMQPConnectionSingleton.AMQPConnection().create_amqp_client(self.io_loop)
+    def test_mobile_push_to_amqp_success(self):
+        self._channel = yield AMQPConnectionSingleton().get_channel(self.io_loop)
         consumer_tag = self._channel.queue_bind(self.on_bindok, "mobile_production_queue",
                                                 AmqpConfig.exchange, "mobile.v1.integration.toto")
         self._channel.basic_consume(self.on_message, "mobile_production_queue")
