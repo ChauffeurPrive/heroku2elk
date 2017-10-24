@@ -1,22 +1,19 @@
-from tornado.testing import AsyncHTTPTestCase, gen_test
+import tornado
 from tornado.concurrent import Future
-import heroku2elk.heroku2Logstash as h2l
-from heroku2elk.heroku2Logstash import configure_logger
-from heroku2elk.config import AmqpConfig
-from heroku2elk.lib.AMQPConnection import AMQPConnectionSingleton
+from tornado.testing import AsyncHTTPTestCase, gen_test
 import json
 
+from heroku2elk.handlers.heroku import HerokuHandler
+from heroku2elk.config import AmqpConfig
+from heroku2elk.lib.AMQPConnection import AMQPConnectionSingleton
 
-class TestH2LApp(AsyncHTTPTestCase):
+
+class TestHeroku(AsyncHTTPTestCase):
     def get_app(self):
-        #configure_logger()
-        return h2l.make_app(self.io_loop)
+        return tornado.web.Application([(r"/heroku/.*", HerokuHandler, dict(ioloop=self.io_loop))])
 
     def setUp(self):
-        super(TestH2LApp, self).setUp()
-
-    def tearDown(self):
-        h2l.close_app()
+        super(TestHeroku, self).setUp()
 
     def test_H2L_split_error(self):
         payload = b"50 <40>1 2017-06-14T13:52:29+00:00 host app web.3 - State changed from starting to up\n119 <40>1 2017-06-14T13:53:26+00:00 host app web.3 - Starting process with command `bundle exec rackup config.ru -p 24405`"
@@ -26,7 +23,7 @@ class TestH2LApp(AsyncHTTPTestCase):
 
     @gen_test
     def test_H2L_heroku_push_to_amqp_success(self):
-        self._channel = yield AMQPConnectionSingleton.AMQPConnection().create_amqp_client(self.io_loop)
+        self._channel = yield AMQPConnectionSingleton().get_channel(self.io_loop)
         consumer_tag = self._channel.queue_bind(self.on_bindok, "heroku_production_queue",
                                  AmqpConfig.exchange, "heroku.v1.integration.toto")
         self._channel.basic_consume(self.on_message, "heroku_production_queue")
