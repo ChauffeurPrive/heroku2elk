@@ -18,7 +18,6 @@ class TestAMQPConnection(AsyncHTTPTestCase):
         res = yield sub.connect(self.io_loop)
         self.assertTrue(res)
         yield sub.disconnect()
-        print('end test1')
 
     @gen_test
     def test_connect_failure(self):
@@ -27,7 +26,6 @@ class TestAMQPConnection(AsyncHTTPTestCase):
         res = yield sub.connect(self.io_loop)
         self.assertFalse(res)
         yield sub.disconnect()
-        print('end test2')
 
     @gen_test
     def test_pubsub(self):
@@ -61,7 +59,7 @@ class TestAMQPConnection(AsyncHTTPTestCase):
         frame.method.NAME = 'toto.nack'
         con.statsdClient = Mock()
         con.statsdClient.incr = Mock()
-        con.on_delivery_confirmation(frame)
+        con._on_delivery_confirmation(frame)
         con.statsdClient.incr.assert_called_with('amqp.output_failure', count=1)
 
     def test_delivery_confirmation_ack(self):
@@ -71,5 +69,5 @@ class TestAMQPConnection(AsyncHTTPTestCase):
         frame.method.NAME = 'toto.ack'
         con.statsdClient = Mock()
         con.statsdClient.incr = Mock()
-        con.on_delivery_confirmation(frame)
+        con._on_delivery_confirmation(frame)
         con.statsdClient.incr.assert_called_with('amqp.output_delivered', count=1)

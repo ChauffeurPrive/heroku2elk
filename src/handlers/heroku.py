@@ -60,6 +60,11 @@ class HerokuHandler(tornado.web.RequestHandler):
             sys.exit(1)
 
     def _push_to_amqp(self, msg):
+        """
+        publish message to amqp, splitting the uri to format the json payload
+        :param msg: input decoded message
+        :return: {void}
+        """
         StatsClientSingleton().incr('amqp.output', count=1)
         payload = dict()
         path = self.request.uri.split('/')[1:]

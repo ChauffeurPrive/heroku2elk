@@ -19,9 +19,7 @@ class MobileHandler(tornado.web.RequestHandler):
     def post(self):
         """
         HTTP Post handler
-        1. Split the input payload into an array of bytes
-        2. send HTTP requests to logstash for each element of the array
-        3. aggregate answers
+        * Forward request: publish to AMQP
         :return: HTTPStatus 200
         """
         try:
