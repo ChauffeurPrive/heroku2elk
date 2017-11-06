@@ -1,25 +1,21 @@
 import tornado.web
 import logging
-from tornado import gen
 import sys
-import pika
 
-from heroku2elk.lib.Statsd import StatsClientSingleton
-from heroku2elk.lib.AMQPConnection import AMQPConnectionSingleton
+from src.lib.Statsd import StatsClientSingleton
 
 
 class MobileHandler(tornado.web.RequestHandler):
     """ The Mobile HTTP handler class
     """
 
-    def initialize(self, ioloop):
+    def initialize(self, amqp_con):
         """
         handler initialisation
         """
         self.logger = logging.getLogger("tornado.application")
-        self.ioloop = ioloop
+        self.amqp_con = amqp_con
 
-    @gen.coroutine
     def post(self):
         """
         HTTP Post handler
@@ -29,20 +25,12 @@ class MobileHandler(tornado.web.RequestHandler):
         :return: HTTPStatus 200
         """
         try:
-            channel = yield AMQPConnectionSingleton().get_channel(self.ioloop)
             StatsClientSingleton().incr('input.mobile', count=1)
             StatsClientSingleton().incr('amqp.output', count=1)
             routing_key = self.request.uri.replace('/', '.')[1:]
 
-            channel.basic_publish(exchange='logs',
-                                  routing_key=routing_key,
-                                  body=self.request.body,
-                                  properties=pika.BasicProperties(
-                                          delivery_mode=1,
-                                          # make message persistent
-                                       ),
-                                  mandatory=True
-                                  )
+            self.amqp_con.publish(routing_key, self.request.body)
+
         except Exception as e:
             self.set_status(500)
             StatsClientSingleton().incr('amqp.output_exception', count=1)

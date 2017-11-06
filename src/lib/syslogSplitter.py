@@ -1,6 +1,6 @@
 import re
-from heroku2elk.config import TruncateConfig
-from heroku2elk.lib.Statsd import StatsClientSingleton
+from src.config import TruncateConfig
+from src.lib.Statsd import StatsClientSingleton
 
 patternStackTrace = re.compile(TruncateConfig.stack_pattern)
 patternToken = re.compile(TruncateConfig.token_pattern)

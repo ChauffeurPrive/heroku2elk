@@ -1,7 +1,7 @@
 import tornado.web
 from tornado import gen
 
-from heroku2elk.lib.Statsd import StatsClientSingleton
+from src.lib.Statsd import StatsClientSingleton
 
 
 class HeartbeatHandler(tornado.web.RequestHandler):

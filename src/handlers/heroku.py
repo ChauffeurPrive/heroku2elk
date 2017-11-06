@@ -1,26 +1,23 @@
 import tornado.web
 import logging
-from tornado import gen
 import json
 import sys
-import pika
 
-from heroku2elk.config import TruncateConfig
-from heroku2elk.lib.Statsd import StatsClientSingleton
-from heroku2elk.lib.syslogSplitter import split
-from heroku2elk.lib.AMQPConnection import AMQPConnectionSingleton
+from src.config import TruncateConfig
+from src.lib.Statsd import StatsClientSingleton
+from src.lib.syslogSplitter import split
 
 
 class HerokuHandler(tornado.web.RequestHandler):
     """ The Heroku HTTP drain handler class
     """
 
-    def initialize(self, ioloop):
+    def initialize(self, amqp_con):
         """
         handler initialisation
         """
         self.logger = logging.getLogger("tornado.application")
-        self.ioloop = ioloop
+        self.amqp_con = amqp_con
 
     def set_default_headers(self):
         """
@@ -30,7 +27,6 @@ class HerokuHandler(tornado.web.RequestHandler):
         """
         self.set_header('Content-Length', '0')
 
-    @gen.coroutine
     def post(self):
         """
         HTTP Post handler
@@ -53,8 +49,7 @@ class HerokuHandler(tornado.web.RequestHandler):
 
         # 2. forward
         try:
-            channel = yield AMQPConnectionSingleton().get_channel(self.ioloop)
-            [self._push_to_amqp(channel, l) for l in logs]
+            [self._push_to_amqp(l) for l in logs]
             self.set_status(200)
         except Exception as e:
             self.set_status(500)
@@ -64,7 +59,7 @@ class HerokuHandler(tornado.web.RequestHandler):
                               .format(e, self.request.uri))
             sys.exit(1)
 
-    def _push_to_amqp(self, channel, msg):
+    def _push_to_amqp(self, msg):
         StatsClientSingleton().incr('amqp.output', count=1)
         payload = dict()
         path = self.request.uri.split('/')[1:]
@@ -78,12 +73,4 @@ class HerokuHandler(tornado.web.RequestHandler):
                                            payload['parser_ver'],
                                            payload['env'], payload['app'])
 
-        channel.basic_publish(exchange='logs',
-                              routing_key=routing_key,
-                              body=json.dumps(payload),
-                              properties=pika.BasicProperties(
-                                  delivery_mode=1,
-                                  # make message persistent
-                              ),
-                              mandatory=True
-                              )
+        self.amqp_con.publish(routing_key, json.dumps(payload))

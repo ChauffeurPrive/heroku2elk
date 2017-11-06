@@ -1,6 +1,6 @@
 import tornado
 from tornado.testing import AsyncHTTPTestCase
-from heroku2elk.handlers.heartbeat import HeartbeatHandler
+from src.handlers.heartbeat import HeartbeatHandler
 
 
 class TestHeartbeat(AsyncHTTPTestCase):

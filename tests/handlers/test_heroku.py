@@ -1,54 +1,33 @@
-import tornado
-from tornado.concurrent import Future
-from tornado.testing import AsyncHTTPTestCase, gen_test
-import json
+import unittest
+from unittest.mock import Mock, patch
 
-from heroku2elk.handlers.heroku import HerokuHandler
-from heroku2elk.config import AmqpConfig
-from heroku2elk.lib.AMQPConnection import AMQPConnectionSingleton
+from src.handlers.heroku import HerokuHandler
 
 
-class TestHeroku(AsyncHTTPTestCase):
-    def get_app(self):
-        return tornado.web.Application([(r"/heroku/.*", HerokuHandler, dict(ioloop=self.io_loop))])
+class TestHeroku(unittest.TestCase):
 
-    def setUp(self):
-        super(TestHeroku, self).setUp()
+    @patch('src.handlers.heroku.sys.exit')
+    def test_h2l_heroku_post_failure(self, sysExit):
+        """
+        Exception occurs while pushing message to rabbitmq
+        return 500
+        :return:
+        """
 
-    def test_H2L_split_error(self):
-        payload = b"50 <40>1 2017-06-14T13:52:29+00:00 host app web.3 - State changed from starting to up\n119 <40>1 2017-06-14T13:53:26+00:00 host app web.3 - Starting process with command `bundle exec rackup config.ru -p 24405`"
-        response = self.fetch('/heroku/v1/toto', method='POST', body=payload)
-        self.assertEqual(response.code, 500)
-        self.assertEqual(len(response.body), 0)
+        sysExit = Mock(return_value=True)
+        amqp_con = Mock()
+        amqp_con.publish = Mock(side_effect=Exception)
+        application = Mock()
+        application.ui_methods = Mock()
+        application.ui_methods.items = Mock(return_value=[])
+        request = Mock()
+        request.uri = "./heroku/v1/integration/toto"
+        handler = HerokuHandler(application, request, amqp_con=amqp_con)
 
-    @gen_test
-    def test_H2L_heroku_push_to_amqp_success(self):
-        self._channel = yield AMQPConnectionSingleton().get_channel(self.io_loop)
-        consumer_tag = self._channel.queue_bind(self.on_bindok, "heroku_production_queue",
-                                 AmqpConfig.exchange, "heroku.v1.integration.toto")
-        self._channel.basic_consume(self.on_message, "heroku_production_queue")
-        self.futureMsg = Future()
+        handler.request.body = b"123 <40>1 2017-06-21T17:02:55+00:00 host ponzi web.1 - " \
+            b"Lorem ipsum dolor sit amet, consecteteur adipiscing elit b'quis' b'ad'.\n"
 
-        payload = b"123 <40>1 2017-06-21T17:02:55+00:00 host ponzi web.1 - Lorem ipsum dolor sit amet, consecteteur adipiscing elit b'quis' b'ad'.\n"
-        response = self.http_client.fetch(self.get_url('/heroku/v1/integration/toto'), method='POST', body=payload)
+        handler.post()
 
-        res = yield self.futureMsg
-        json_res = json.loads(res.decode('utf-8'))
-        self.assertEqual(json_res['app'], 'toto')
-        self.assertEqual(json_res['env'], 'integration')
-        self.assertEqual(json_res['type'], 'heroku')
-        self.assertEqual(json_res['http_content_length'], 122)
-        self.assertEqual(json_res['parser_ver'], 'v1')
-        self.assertEqual(json_res['message'], '<40>1 2017-06-21T17:02:55+00:00 host ponzi web.1 - Lorem ipsum dolor sit amet, consecteteur adipiscing elit b\'quis\' b\'ad\'.')
-        value = yield response
-        self.assertEqual(value.code, 200)
-        self.assertEqual(len(value.body), 0)
-        self._channel.close()
-
-    def on_message(self, unused_channel, basic_deliver, properties, body):
-        if not self.futureMsg.done():
-            self.futureMsg.set_result(body)
-        self._channel.basic_ack(basic_deliver.delivery_tag)
-
-    def on_bindok(self, unused_frame):
-        pass
+        handler.get_status()
+        self.assertEqual(handler.get_status(), 500)

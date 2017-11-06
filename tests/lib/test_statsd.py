@@ -1,5 +1,5 @@
 import unittest
-from heroku2elk.lib.Statsd import StatsClientSingleton
+from src.lib.Statsd import StatsClientSingleton
 
 
 class StatsdSingletonTest(unittest.TestCase):

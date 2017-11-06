@@ -1,5 +1,5 @@
 from statsd import StatsClient
-from heroku2elk.config import MonitoringConfig
+from src.config import MonitoringConfig
 
 
 class StatsClientSingleton:

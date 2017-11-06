@@ -10,7 +10,7 @@ Heroku is using a syslog formatted payload with multiple log lines per request, 
 https://devcenter.heroku.com/articles/log-drains#https-drains
 https://tools.ietf.org/html/rfc6587#section-3.4.1
 
-This service is written in python and based on the well-known Tornado web server (http://www.tornadoweb.org) for the scalability.
+This service is written in python and based on Tornado web server (http://www.tornadoweb.org) for the scalability.
 
 ## How to run it ?
 
@@ -24,7 +24,7 @@ pip install -r requirements.txt
 You're ready to go!
 
 ```
-python -m src.heroku2Logstash
+gunicorn --workers=2 --max-requests=1000 -k tornado main:app
 ```
 
 ### Development
