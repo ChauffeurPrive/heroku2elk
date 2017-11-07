@@ -24,7 +24,7 @@ pip install -r requirements.txt
 You're ready to go!
 
 ```
- venv/bin/gunicorn -b :8080 -w 4 -k tornado main:app 
+ venv/bin/gunicorn -b :8080 -w 4 -k tornado --max-requests 100000000 main:app 
 ```
 
 ### Development
