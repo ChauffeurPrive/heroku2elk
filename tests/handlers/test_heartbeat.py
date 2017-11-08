@@ -1,15 +1,17 @@
+import tornado
 from tornado.testing import AsyncHTTPTestCase
-import heroku2elk.heroku2Logstash as h2l
-from heroku2elk.heroku2Logstash import configure_logger
+from src.handlers.heartbeat import HeartbeatHandler
 
 
-class TestH2LApp(AsyncHTTPTestCase):
+class TestHeartbeat(AsyncHTTPTestCase):
     def get_app(self):
-        #configure_logger()
-        return h2l.make_app(self.io_loop)
+        return tornado.web.Application([
+            (r"/api/healthcheck", HeartbeatHandler, ),
+            (r"/api/heartbeat", HeartbeatHandler, ),
+        ])
 
     def setUp(self):
-        super(TestH2LApp, self).setUp()
+        super(TestHeartbeat, self).setUp()
 
     def test_health_check(self):
         response = self.fetch('/api/healthcheck')
@@ -18,5 +20,3 @@ class TestH2LApp(AsyncHTTPTestCase):
     def test_heartbeat(self):
         response = self.fetch('/api/heartbeat')
         self.assertEqual(response.code, 200)
-
-

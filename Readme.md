@@ -1,16 +1,16 @@
 # Heroku 2 ELK
 
-This service is a thin layer between heroku http drains and logstash.
+This service is a thin layer between http logs and rabbitmq.
 It is responsible for:
- * handle Heroku HTTP drain with syslog formatted payload
- * split them
+ * handle Heroku HTTP drain with syslog formatted payload and split them
+ * handle Mobile HTTP json logs
  * forward them to logstash
 
 Heroku is using a syslog formatted payload with multiple log lines per request, hard to split in a logstash input plugin.
 https://devcenter.heroku.com/articles/log-drains#https-drains
 https://tools.ietf.org/html/rfc6587#section-3.4.1
 
-This service is written in python and based on the well-known Tornado web server (http://www.tornadoweb.org) for the scalability.
+This service is written in python and based on Tornado web server (http://www.tornadoweb.org) for the scalability.
 
 ## How to run it ?
 
@@ -24,7 +24,7 @@ pip install -r requirements.txt
 You're ready to go!
 
 ```
-python -m src.heroku2Logstash
+ venv/bin/gunicorn -b :8080 -w 4 -k tornado --max-requests 100000000 main:app 
 ```
 
 ### Development
