@@ -1,3 +1,5 @@
+import json
+import gzip
 import tornado
 from tornado import gen
 from tornado.ioloop import IOLoop
@@ -33,11 +35,42 @@ class TestTornadoMobile(AsyncHTTPTestCase):
 
         payload = b"123 <40>1 2017-06-21T17:02:55+00:00 host ponzi web.1 - " \
                   b"Lorem ipsum dolor sit amet, consecteteur adipiscing elit b'quis' b'ad'.\n"
-        response = self.http_client.fetch(self.get_url('/mobile/v1/integration/toto'), method='POST', body=payload)
+        response = self.http_client.fetch(
+            self.get_url('/mobile/v1/integration/toto'),
+            method='POST',
+            body=payload,
+            use_gzip=False
+        )
 
         res = yield self.futureMsg
         self.assertEqual(res, b"123 <40>1 2017-06-21T17:02:55+00:00 host ponzi web.1 - "
                               b"Lorem ipsum dolor sit amet, consecteteur adipiscing elit b'quis' b'ad'.\n")
+        value = yield response
+        self.assertEqual(value.code, 200)
+        self.assertEqual(len(value.body), 0)
+
+        yield consumer.disconnect()
+
+    @gen_test
+    def test_mobile_push_to_amqp_success_gzip(self):
+        consumer = AMQPConnection()
+        yield consumer.connect(self.io_loop)
+
+        self.futureMsg = Future()
+        yield consumer.subscribe("mobile.v1.integration.toto", "mobile_queue", self.on_message)
+
+        payload = gzip.compress(json.dumps({'message': 'this is a log message'}).encode())
+
+        request = tornado.httpclient.HTTPRequest(
+            self.get_url('/mobile/v1/integration/toto'),
+            method='POST',
+            body=payload,
+            use_gzip=True)
+
+        response = self.http_client.fetch(request)
+
+        res = yield self.futureMsg
+        self.assertEqual(res, b'{"message": "this is a log message"}')
         value = yield response
         self.assertEqual(value.code, 200)
         self.assertEqual(len(value.body), 0)
