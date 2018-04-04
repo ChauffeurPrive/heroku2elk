@@ -1,6 +1,7 @@
 import tornado.web
 import logging
 import sys
+import gzip
 
 from src.lib.Statsd import StatsClientSingleton
 
@@ -27,7 +28,12 @@ class MobileHandler(tornado.web.RequestHandler):
             StatsClientSingleton().incr('amqp.output', count=1)
             routing_key = self.request.uri.replace('/', '.')[1:]
 
-            self.amqp_con.publish(routing_key, self.request.body)
+            payload = self.request.body
+            content_encoding = self.request.headers.get('Accept-Encoding')
+            if content_encoding == 'gzip':
+                payload = gzip.decompress(payload)
+
+            self.amqp_con.publish(routing_key, payload)
 
         except Exception as e:
             self.set_status(500)
