@@ -6,8 +6,8 @@ import gzip
 from src.lib.Statsd import StatsClientSingleton
 
 
-class MobileHandler(tornado.web.RequestHandler):
-    """ The Mobile HTTP handler class
+class CloudTrailHandler(tornado.web.RequestHandler):
+    """ The AWS CloudTrail handler class
     """
 
     def initialize(self, amqp_con):
@@ -24,7 +24,7 @@ class MobileHandler(tornado.web.RequestHandler):
         :return: HTTPStatus 200
         """
         try:
-            StatsClientSingleton().incr('input.mobile', count=1)
+            StatsClientSingleton().incr('input.cloudtrail', count=1)
             StatsClientSingleton().incr('amqp.output', count=1)
             routing_key = self.request.uri.replace('/', '.')[1:]
 
@@ -38,7 +38,7 @@ class MobileHandler(tornado.web.RequestHandler):
         except Exception as e:
             self.set_status(500)
             StatsClientSingleton().incr('amqp.output_exception', count=1)
-            self.logger.info("Error while pushing mobile message to AMQP, "
+            self.logger.info("Error while pushing CloudTrail message to AMQP, "
                              "exception: {} msg: {}, uri: {}"
                              .format(e, self.request.body, self.request.uri))
             sys.exit(1)
