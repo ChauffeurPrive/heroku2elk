@@ -6,6 +6,7 @@ import sys
 from src.handlers.heartbeat import HeartbeatHandler
 from src.handlers.heroku import HerokuHandler
 from src.handlers.mobile import MobileHandler
+from src.handlers.cloudtrail import CloudTrailHandler
 
 from src.lib.AMQPConnection import AMQPConnection
 
