@@ -2,4 +2,6 @@ venv
 *.pyc
 *.log
 htmlcov
+.coverage
+.cache
 
