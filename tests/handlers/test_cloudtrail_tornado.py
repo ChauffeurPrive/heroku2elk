@@ -33,8 +33,7 @@ class TestTornadoCloudTrail(AsyncHTTPTestCase):
         self.futureMsg = Future()
         yield consumer.subscribe("cloudtrail.v1.integration.toto", "cloudtrail_queue", self.on_message)
 
-        payload = b"123 <40>1 2017-06-21T17:02:55+00:00 host ponzi web.1 - " \
-                  b"Lorem ipsum dolor sit amet, consecteteur adipiscing elit b'quis' b'ad'.\n"
+        payload = b'{"Records": [{"test": "plop"}]}'
         response = self.http_client.fetch(
             self.get_url('/cloudtrail/v1/integration/toto'),
             method='POST',
@@ -43,8 +42,7 @@ class TestTornadoCloudTrail(AsyncHTTPTestCase):
         )
 
         res = yield self.futureMsg
-        self.assertEqual(res, b"123 <40>1 2017-06-21T17:02:55+00:00 host ponzi web.1 - "
-                              b"Lorem ipsum dolor sit amet, consecteteur adipiscing elit b'quis' b'ad'.\n")
+        self.assertEqual(res, b'{"test": "plop"}')
         value = yield response
         self.assertEqual(value.code, 200)
         self.assertEqual(len(value.body), 0)
@@ -59,7 +57,7 @@ class TestTornadoCloudTrail(AsyncHTTPTestCase):
         self.futureMsg = Future()
         yield consumer.subscribe("cloudtrail.v1.integration.toto", "cloudtrail_queue", self.on_message)
 
-        payload = gzip.compress(json.dumps({'message': 'this is a log message'}).encode())
+        payload = gzip.compress(json.dumps({'Records': [{'message': 'this is a log message'}]}).encode())
 
         request = tornado.httpclient.HTTPRequest(
             self.get_url('/cloudtrail/v1/integration/toto'),

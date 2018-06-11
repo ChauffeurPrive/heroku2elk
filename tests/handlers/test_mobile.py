@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 from src.handlers.mobile import MobileHandler
 
 
-class TestHeroku(unittest.TestCase):
+class TestMobile(unittest.TestCase):
 
     @patch('src.handlers.heroku.sys.exit')
     def test_h2l_heroku_post_failure(self, sysExit):
