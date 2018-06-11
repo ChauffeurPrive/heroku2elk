@@ -31,7 +31,7 @@ class TestTornadoCloudTrail(AsyncHTTPTestCase):
         yield consumer.connect(self.io_loop)
 
         self.futureMsg = Future()
-        yield consumer.subscribe("cloudtrail.v1.integration.toto", "cloudtrail_queue", self.on_message)
+        yield consumer.subscribe("cloudtrail.v1.integration.toto", "cloudtrail_integration_queue", self.on_message)
 
         payload = b'{"Records": [{"test": "plop"}]}'
         response = self.http_client.fetch(
@@ -55,7 +55,7 @@ class TestTornadoCloudTrail(AsyncHTTPTestCase):
         yield consumer.connect(self.io_loop)
 
         self.futureMsg = Future()
-        yield consumer.subscribe("cloudtrail.v1.integration.toto", "cloudtrail_queue", self.on_message)
+        yield consumer.subscribe("cloudtrail.v1.integration.toto", "cloudtrail_integration_queue", self.on_message)
 
         payload = gzip.compress(json.dumps({'Records': [{'message': 'this is a log message'}]}).encode())
 
