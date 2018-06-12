@@ -25,8 +25,7 @@ class CloudTrailHandler(tornado.web.RequestHandler):
         :return: HTTPStatus 200
         """
         try:
-            StatsClientSingleton().incr('input.cloudtrail', count=1)
-            StatsClientSingleton().incr('amqp.output', count=1)
+            StatsClientSingleton().incr('cloudtrail.input', count=1)
             routing_key = self.request.uri.replace('/', '.')[1:]
 
             payload = self.request.body
@@ -37,6 +36,8 @@ class CloudTrailHandler(tornado.web.RequestHandler):
             entry_list = json.loads(payload)["Records"]
             for entry in entry_list:
                 self.amqp_con.publish(routing_key, json.dumps(entry))
+
+            StatsClientSingleton().incr('amqp.output', count=len(entry_list))
 
         except Exception as e:
             self.set_status(500)
