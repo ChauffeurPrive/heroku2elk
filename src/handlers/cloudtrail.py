@@ -33,7 +33,7 @@ class CloudTrailHandler(tornado.web.RequestHandler):
             if content_encoding == 'gzip':
                 payload = gzip.decompress(payload)
 
-            entry_list = json.loads(payload)["Records"]
+            entry_list = json.loads(payload.decode())["Records"]
             for entry in entry_list:
                 self.amqp_con.publish(routing_key, json.dumps(entry))
 
