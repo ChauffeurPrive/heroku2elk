@@ -21,6 +21,7 @@ def connect_to_amqp():
     yield amqp_con.declare_queue("mobile_production_queue")
     yield amqp_con.declare_queue("heroku_integration_queue")
     yield amqp_con.declare_queue("heroku_production_queue")
+    yield amqp_con.declare_queue("cloudtrail_integration_queue")
     yield amqp_con.declare_queue("cloudtrail_production_queue")
     return amqp_con
 
