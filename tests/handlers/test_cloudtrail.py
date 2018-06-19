@@ -1,13 +1,13 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from src.handlers.mobile import MobileHandler
+from src.handlers.cloudtrail import CloudTrailHandler
 
 
-class TestMobile(unittest.TestCase):
+class TestCloudTrail(unittest.TestCase):
 
     @patch('src.handlers.heroku.sys.exit')
-    def test_h2l_heroku_post_failure(self, sysExit):
+    def test_h2l_cloudtrail_post_failure(self, sysExit):
         """
         Exception occurs while pushing message to rabbitmq
         return 500
@@ -21,11 +21,10 @@ class TestMobile(unittest.TestCase):
         application.ui_methods = Mock()
         application.ui_methods.items = Mock(return_value=[])
         request = Mock()
-        request.uri = "./heroku/v1/integration/toto"
-        handler = MobileHandler(application, request, amqp_con=amqp_con)
+        request.uri = "./cloudtrail/v1/integration/toto"
+        handler = CloudTrailHandler(application, request, amqp_con=amqp_con)
 
-        handler.request.body = b"123 <40>1 2017-06-21T17:02:55+00:00 host ponzi web.1 - " \
-            b"Lorem ipsum dolor sit amet, consecteteur adipiscing elit b'quis' b'ad'.\n"
+        handler.request.body = '{"test": "plop"}'
 
         handler.post()
 

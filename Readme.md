@@ -32,7 +32,7 @@ You're ready to go!
 #### Unit-testing
 
 ```
-python -m unittests
+py.test tests/
 ```
 
 #### Fake Log Generator
