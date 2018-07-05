@@ -33,11 +33,14 @@ class CloudTrailHandler(tornado.web.RequestHandler):
             if content_encoding == 'gzip':
                 payload = gzip.decompress(payload)
 
-            entry_list = json.loads(payload.decode())["Records"]
-            for entry in entry_list:
-                self.amqp_con.publish(routing_key, json.dumps(entry))
+            try:
+                entry_list = json.loads(payload.decode())["Records"]
+                for entry in entry_list:
+                    self.amqp_con.publish(routing_key, json.dumps(entry))
 
-            StatsClientSingleton().incr('amqp.output', count=len(entry_list))
+                StatsClientSingleton().incr('amqp.output', count=len(entry_list))
+            except KeyError:
+                self.logger.warning("Error with CloudTrail message, payload: {}".format(payload.decode()))
 
         except Exception as e:
             self.set_status(500)
