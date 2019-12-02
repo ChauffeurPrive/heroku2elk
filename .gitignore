@@ -4,4 +4,4 @@ venv
 htmlcov
 .coverage
 .cache
-
+.idea/*
